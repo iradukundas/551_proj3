@@ -2,32 +2,18 @@ import bisect
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
-
-# Given the window size w, pre-compute X(X^T X)^{-1}X^T - I,
-# in which X = [0   1
-#               1   1
-#               2   1
-#               ...
-#             (w-1) 1]
 def _compute_coef_matrix(w):
     from numpy import array, arange, ones, linalg, eye
     X = array([arange(w), ones([w])]).transpose()
     return X @ linalg.inv(X.transpose() @ X) @ X.transpose() - eye(w)
 
-
-# TODO ktran: improve the algorithm
 def _partition_anomalies(windows, k):
-    """
-    :param windows: windows, sorted by anomaly score in descending order
-    :param k: number of partitions
-    :return: partition positions
-    """
     diffs = [windows[iw - 1][1] - windows[iw][1]
              for iw in range(1, len(windows))]
     top_jump_positions = sorted(range(len(diffs)), key=lambda i: diffs[i], reverse=True)[0:k-1]
     return sorted(top_jump_positions) + [len(windows) - 1]
-
 
 def detect_anomalies(data, lag, num_anomalies, num_levels=5, visualize=True):
     if type(data) != pd.Series:
@@ -38,7 +24,7 @@ def detect_anomalies(data, lag, num_anomalies, num_levels=5, visualize=True):
         raise ValueError('expected number of anomalies must be positive.')
     num_levels = min(num_levels, num_anomalies) 
 
-    data = data.fillna(method='pad')  # fill NANs with 0 to make the series contiguous
+    data = data.fillna(method='pad')
 
     coefs = _compute_coef_matrix(lag)
 
@@ -48,8 +34,7 @@ def detect_anomalies(data, lag, num_anomalies, num_levels=5, visualize=True):
     residuals = np.linalg.norm(coefs @ windows, axis=0)
 
     windows = [(ix, residuals[ix]) for ix in range(num_windows)]
-    windows.sort(key=lambda item: item[1],
-                 reverse=True)  # sort the windows by their residuals in descending order
+    windows.sort(key=lambda item: item[1], reverse=True)
 
     if num_anomalies == 0 or num_levels == 0:
         max_anomaly_score = windows[0][1]
@@ -60,9 +45,8 @@ def detect_anomalies(data, lag, num_anomalies, num_levels=5, visualize=True):
                     .format(max_anomaly_score, max_anomaly_score * 2))
         return None, [max_anomaly_score * 2]
 
-    # Filter out overlapping windows
     iw = 0
-    top_iws = [iw]  # positions of the top windows, after filtering
+    top_iws = [iw]
     while len(top_iws) < num_anomalies:
         while iw < num_windows and any(abs(windows[jw][0] - windows[iw][0]) < lag for jw in top_iws):
             iw += 1
@@ -92,13 +76,23 @@ def detect_anomalies(data, lag, num_anomalies, num_levels=5, visualize=True):
 
         data.plot(title='lag: {0}, #levels: {1}, #anomalies: {2}'
                   .format(lag, num_levels, num_anomalies))
-        for anomaly in anomalies.values:           
-            plt.axvspan(pd.to_datetime(anomaly[1]), pd.to_datetime(anomaly[2]), color=plt.cm.jet(0.65 + float(anomaly[0]) / num_levels / 3), alpha=0.5)
+        for anomaly in anomalies.values:
+
+            #problem 3
+            # 1. converting anomaly[1] and anomaly[2] to datetime
+            start_time = pd.to_datetime(anomaly[1])
+            end_time = pd.to_datetime(anomaly[2])
+            # 2. using plt.cm.jet to get a color
+            color = plt.cm.jet(0.65 + float(anomaly[0]) / num_levels / 3)
+            # 3. using Rectangle to draw a rectangle
+            width = (end_time - start_time).days
+            # 4. adding the rectangle to the plot
+            rect = Rectangle((start_time, plt.ylim()[0]), width, plt.ylim()[1]-plt.ylim()[0], color=color, alpha=0.5)
+            # 5. adding the rectangle to the plot
+            plt.gca().add_patch(rect)
 
     return anomalies, thresholds
 
-
-# @Lech: please explain this function
 def anomalies_to_series(anomalies, index):
     rows = anomalies.shape[0]
     series = pd.Series(np.zeros(len(index)), dtype=np.int)
@@ -110,17 +104,14 @@ def anomalies_to_series(anomalies, index):
         series[start:end] = level
     return series
 
-
 class StreamingAnomalyDetector:
     def __init__(self, lag, thresholds):
-        # This is prototype code and doesn't validate arguments
         self._w = lag
         self._thresholds = thresholds
         self._buffer = np.array([float('nan')] * lag)
         self._buffer.shape = (lag, 1)  # make it vertical
         self._coef_matrix = _compute_coef_matrix(lag)
 
-    # Update thresholds on demand without restarting the service
     def update_thresholds(self, thresholds):
         self._thresholds = thresholds
 
