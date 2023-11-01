@@ -2,6 +2,7 @@ import bisect
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
 
 def _compute_coef_matrix(w):
@@ -79,16 +80,17 @@ def detect_anomalies(data, lag, num_anomalies, num_levels=5, visualize=True):
         for anomaly in anomalies.values:
 
             #problem 3
-            # 1. converting anomaly[1] and anomaly[2] to datetime
             start_time = pd.to_datetime(anomaly[1])
             end_time = pd.to_datetime(anomaly[2])
-            # 2. using plt.cm.jet to get a color
+
+            # use mdates to avoid timezone issues
+            start_time_num = mdates.date2num(start_time.to_pydatetime())
+            end_time_num = mdates.date2num(end_time.to_pydatetime())
+
             color = plt.cm.jet(0.65 + float(anomaly[0]) / num_levels / 3)
-            # 3. using Rectangle to draw a rectangle
-            width = (end_time - start_time).days
-            # 4. adding the rectangle to the plot
-            rect = Rectangle((start_time, plt.ylim()[0]), width, plt.ylim()[1]-plt.ylim()[0], color=color, alpha=0.5)
-            # 5. adding the rectangle to the plot
+            width = end_time_num - start_time_num
+            rect = Rectangle((start_time_num, plt.ylim()[0]), width, plt.ylim()[1] - plt.ylim()[0], color=color, alpha=0.5)
+            
             plt.gca().add_patch(rect)
 
     return anomalies, thresholds
